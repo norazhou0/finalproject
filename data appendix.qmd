@@ -1,0 +1,89 @@
+```{r}
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(janitor)
+library(lubridate)
+```
+
+
+```{r}
+flight <- read_csv("T_ONTIME_REPORTING 4.csv")
+flight <- clean_names(flight)
+```
+
+```{r}
+# Define a function to format the time columns
+convert_time_column <- function(flight_data, column_name) {
+  formatted_times <- sprintf("%04s", flight_data[[column_name]])
+  formatted_times <- paste0(substr(formatted_times, 1, 2), ":", substr(formatted_times, 3, 4))
+  flight_data[[column_name]] <- as.POSIXct(formatted_times, format = "%H:%M")
+  flight_data[[column_name]] <- format(flight_data[[column_name]], "%H:%M")
+  return(flight_data)
+}
+
+# List the columns to convert
+time_columns <- c("dep_time", "arr_time", "crs_dep_time", "crs_arr_time") # Add more columns if necessary
+
+# Loop through the columns and apply the conversion
+for (column in time_columns) {
+  flight <- convert_time_column(flight, column)
+}
+# Convert date
+flight$fl_date <- as.POSIXct(flight$fl_date, format = "%m/%d/%Y %I:%M:%S %p")
+flight$fl_date <- format(flight$fl_date, "%m/%d/%Y")
+```
+
+```{r}
+#EDA
+summary(flight)
+flight <- flight |> 
+  filter(!is.na(dep_delay) & !is.na(arr_delay))
+
+flight |> 
+  group_by(origin) |>
+  #filter(dep_delay_group == 1) |>
+  summarize(total = n(),
+            average_delay = mean(dep_delay)) |>
+  arrange(desc(total))
+
+airport_high <- flight |>
+  filter(origin %in% c("DEN", "ATL", "DFW", "ORD", "CLT"))
+
+
+```
+
+```{r}
+airport_delay <- ggplot(airport_high, aes(x = origin, fill = as.factor(dep_del15) )) +
+  geom_bar(position = "fill") +
+  labs(title = "Proportion of flight delay ≥15 minutes
+       Busiest Airports in US, 2024 January",
+       y = "Proportion of Flight Counts",
+       x = "Origin Airport Code",
+        fill = "Delay ≥ 15 minutes")
+airport_delay
+```
+
+```{r}
+
+flight_cleaned <- flight |>
+  filter(!is.na(carrier_delay) | !is.na(weather_delay) | !is.na(nas_delay) | 
+         !is.na(security_delay) | !is.na(late_aircraft_delay)) |>
+mutate(delay_reason = case_when(
+    !is.na(carrier_delay) & carrier_delay > 0 ~ "Carrier",
+    !is.na(weather_delay) & weather_delay > 0 ~ "Weather",
+    !is.na(nas_delay) & nas_delay > 0 ~ "NAS",
+    !is.na(security_delay) & security_delay > 0 ~ "Security",
+    !is.na(late_aircraft_delay) & late_aircraft_delay > 0 ~ "Late Aircraft",
+    TRUE ~ "Unknown"
+  )) 
+
+delay_type <- ggplot(flight_cleaned, aes(x = fct_infreq(delay_reason)))+
+  geom_bar(fill = "#66c2a5") +
+  theme_minimal() +
+  labs(title = "Delay reasons by types, January 2024",
+       x = "Delay reasons",
+       y = "Number of Flights") 
+delay_type
+```
+
