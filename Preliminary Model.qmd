@@ -1,0 +1,110 @@
+---
+title: "Preliminary Model"
+format: html
+editor: visual
+---
+
+# Part 1: Loading and Cleaning Data
+```{r, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(janitor)
+library(lubridate)
+```
+
+```{r}
+flight_2023 <- read_csv("T_ONTIME_REPORTING_2023.csv")
+flight_2023 <- clean_names(flight_2023)
+```
+
+```{r}
+flight_2024 <- read_csv("T_ONTIME_REPORTING 4.csv")
+flight_2024 <- clean_names(flight_2024)
+```
+
+```{r}
+# Define a function to format the time columns
+convert_time_column <- function(flight_data, column_name) {
+  formatted_times <- sprintf("%04s", flight_data[[column_name]])
+  formatted_times <- paste0(substr(formatted_times, 1, 2), ":", substr(formatted_times, 3, 4))
+  flight_data[[column_name]] <- as.POSIXct(formatted_times, format = "%H:%M")
+  flight_data[[column_name]] <- format(flight_data[[column_name]], "%H:%M")
+  return(flight_data)
+}
+
+# List the columns to convert
+time_columns <- c("dep_time", "arr_time", "crs_dep_time", "crs_arr_time") # Add more columns if necessary
+
+# Loop through the columns and apply the conversion
+for (column in time_columns) {
+  flight_2023 <- convert_time_column(flight_2023, column)
+}
+# Convert date
+flight_2023$fl_date <- as.POSIXct(flight_2023$fl_date, format = "%m/%d/%Y %I:%M:%S %p")
+flight_2023$fl_date <- format(flight_2023$fl_date, "%m/%d/%Y")
+```
+
+logistic (if delay over 15 minutes), KNN (delay reasons), Tree (delay reason)
+
+# Part 2: Exploratory Data Analysis
+```{r}
+#EDA
+summary(flight_2023)
+flight_2023 <- flight_2023 |> 
+  filter(!is.na(dep_delay) & !is.na(arr_delay))
+
+flight_2023 |> 
+  group_by(origin) |>
+  #filter(dep_delay_group == 1) |>
+  summarize(total = n(),
+            average_delay = mean(dep_delay)) |>
+  arrange(desc(total))
+
+airport_high <- flight_2023 |>
+  filter(origin %in% c("ATL", "DEN", "ORD", "DFW", "LAS"))
+
+
+```
+
+```{r}
+airport_delay <- ggplot(airport_high, aes(x = origin, fill = as.factor(dep_del15) )) +
+  geom_bar(position = "fill") +
+  labs(title = "Proportion of flight delay ≥15 minutes
+       Busiest Airports in US, 2023 January",
+       y = "Proportion of Flight Counts",
+       x = "Origin Airport Code",
+        fill = "Delay ≥ 15 minutes")
+airport_delay
+```
+
+```{r}
+flight_cleaned <- flight_2023 |>
+  filter(!is.na(carrier_delay) | !is.na(weather_delay) | !is.na(nas_delay) | 
+         !is.na(security_delay) | !is.na(late_aircraft_delay)) |>
+mutate(delay_reason = case_when(
+    !is.na(carrier_delay) & carrier_delay > 0 ~ "Carrier",
+    !is.na(weather_delay) & weather_delay > 0 ~ "Weather",
+    !is.na(nas_delay) & nas_delay > 0 ~ "NAS",
+    !is.na(security_delay) & security_delay > 0 ~ "Security",
+    !is.na(late_aircraft_delay) & late_aircraft_delay > 0 ~ "Late Aircraft",
+    TRUE ~ "Unknown"
+  )) 
+
+delay_type <- ggplot(flight_cleaned, aes(x = fct_infreq(delay_reason)))+
+  geom_bar(fill = "#66c2a5") +
+  theme_minimal() +
+  labs(title = "Delay reasons by types, January 2024",
+       x = "Delay reasons",
+       y = "Number of Flights") 
+delay_type
+```
+
+# Part 3: Model fitting
+
+```{r}
+log_model <- glm(dep_del15 ~ distance, family = "binomial", flight_2023)
+summary(log_model)
+```
+
+
