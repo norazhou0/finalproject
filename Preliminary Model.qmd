@@ -1,0 +1,212 @@
+---
+title: "Preliminary Model"
+format: html
+editor: visual
+---
+
+# Part 1: Loading and Cleaning Data
+
+```{r, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(janitor)
+library(lubridate)
+library(randomForest)
+```
+
+```{r}
+flight_2023 <- read_csv("T_ONTIME_REPORTING_2023.csv")
+flight_2023 <- clean_names(flight_2023)
+flight_2023 <- flight_2023[, !(names(flight_2023) %in% c("origin_state_abr", "dest_state_abr"))]
+
+```
+
+```{r}
+flight_2024 <- read_csv("T_ONTIME_REPORTING 4.csv")
+flight_2024 <- clean_names(flight_2024)
+```
+
+```{r}
+# Define a function to format the time columns
+convert_time_column <- function(flight_data, column_name) {
+  formatted_times <- sprintf("%04s", flight_data[[column_name]])
+  formatted_times <- paste0(substr(formatted_times, 1, 2), ":", substr(formatted_times, 3, 4))
+  flight_data[[column_name]] <- as.POSIXct(formatted_times, format = "%H:%M")
+  flight_data[[column_name]] <- format(flight_data[[column_name]], "%H:%M")
+  return(flight_data)
+}
+
+# List the columns to convert
+time_columns <- c("dep_time", "arr_time", "crs_dep_time", "crs_arr_time") # Add more columns if necessary
+
+# Loop through the columns and apply the conversion
+for (column in time_columns) {
+  flight_2023 <- convert_time_column(flight_2023, column)
+}
+# Convert date
+flight_2023$fl_date <- as.POSIXct(flight_2023$fl_date, format = "%m/%d/%Y %I:%M:%S %p")
+flight_2023$fl_date <- format(flight_2023$fl_date, "%m/%d/%Y")
+flight_2024$fl_date <- as.POSIXct(flight_2024$fl_date, format = "%m/%d/%Y %I:%M:%S %p")
+flight_2024$fl_date <- format(flight_2024$fl_date, "%m/%d/%Y")
+```
+
+logistic (if delay over 15 minutes), KNN (delay reasons), Tree (delay reason)
+
+# Part 2: Exploratory Data Analysis
+
+```{r}
+#EDA
+summary(flight_2023)
+flight_2023 <- flight_2023 |> 
+  filter(!is.na(dep_delay) & !is.na(dep_del15) & !is.na(arr_delay))
+flight_2024 <- flight_2024 |>
+  filter(!is.na(dep_delay) & !is.na(dep_del15) & !is.na(arr_delay))
+
+flight_2023 |> 
+  group_by(origin) |>
+  #filter(dep_delay_group == 1) |>
+  summarize(total = n(),
+            average_delay = mean(dep_delay)) |>
+  arrange(desc(total))
+
+airport_high <- flight_2023 |>
+  filter(origin %in% c("ATL", "DEN", "ORD", "DFW", "LAS"))
+
+
+```
+
+```{r}
+airport_delay <- ggplot(airport_high, aes(x = origin, fill = as.factor(dep_del15) )) +
+  geom_bar(position = "fill") +
+  labs(title = "Proportion of flight delay ≥15 minutes
+       Busiest Airports in US, 2023 January",
+       y = "Proportion of Flight Counts",
+       x = "Origin Airport Code",
+        fill = "Delay ≥ 15 minutes")
+airport_delay
+```
+
+```{r}
+flight_2023 <- flight_2023 |>
+mutate(delay_reason = case_when(
+    !is.na(carrier_delay) & carrier_delay > 0 ~ "Carrier",
+    !is.na(weather_delay) & weather_delay > 0 ~ "Weather",
+    !is.na(nas_delay) & nas_delay > 0 ~ "NAS",
+    !is.na(security_delay) & security_delay > 0 ~ "Security",
+    !is.na(late_aircraft_delay) & late_aircraft_delay > 0 ~ "Late Aircraft",
+    TRUE ~ "Unknown"
+  )) 
+flight_2024 <- flight_2024 |>
+mutate(delay_reason = case_when(
+    !is.na(carrier_delay) & carrier_delay > 0 ~ "Carrier",
+    !is.na(weather_delay) & weather_delay > 0 ~ "Weather",
+    !is.na(nas_delay) & nas_delay > 0 ~ "NAS",
+    !is.na(security_delay) & security_delay > 0 ~ "Security",
+    !is.na(late_aircraft_delay) & late_aircraft_delay > 0 ~ "Late Aircraft",
+    TRUE ~ "Unknown"
+  )) 
+
+delay_type <- ggplot(flight_2023, aes(x = fct_infreq(delay_reason)))+
+  geom_bar(fill = "#66c2a5") +
+  theme_minimal() +
+  labs(title = "Delay reasons by types, January 2024",
+       x = "Delay reasons",
+       y = "Number of Flights") 
+delay_type
+```
+
+# Part 3: Model fitting
+
+```{r}
+#Filter airport and carrier
+top10_airport_23 <- flight_2023 |>
+  group_by(origin) |>
+  summarize(count = n()) |>
+  arrange(desc(count)) |>
+    slice_head(n = 10)
+
+top5_carrier_23 <- flight_2023 |>
+  group_by(op_unique_carrier) |>
+  summarize(count = n()) |>
+  arrange(desc(count)) |>
+    slice_head(n = 5)
+
+flight_2023_filtered <- flight_2023 |> 
+  filter(origin %in% top10_airport_23$origin, op_unique_carrier %in% top5_carrier_23$op_unique_carrier)
+
+flight_2024_filtered <- flight_2024 |> 
+  filter(origin %in% top10_airport_23$origin, op_unique_carrier %in% top5_carrier_23$op_unique_carrier)
+
+flight_2023_filtered <- flight_2023_filtered |>
+  mutate(dep_hour_planned =str_extract(flight_2023_filtered$crs_dep_time, "[0-9]{2}"),
+         dep_period = ifelse(dep_hour_planned %in% c("06", "07", "08", "09", "10", "11"), "morning", 
+                             ifelse(dep_hour_planned %in% c("12", "13", "14", "15","16", "17"), "afternoon",
+                                    ifelse(dep_hour_planned %in% c("18", "19", "20", "21", "22", "23"), "night", "midnight"))))
+flight_2024_filtered <- flight_2024_filtered |>
+  mutate(dep_hour_planned =str_extract(flight_2024_filtered$crs_dep_time, "[0-9]{2}"),
+         dep_period = ifelse(dep_hour_planned %in% c("06", "07", "08", "09", "10", "11"), "morning", 
+                             ifelse(dep_hour_planned %in% c("12", "13", "14", "15","16", "17"), "afternoon",
+                                    ifelse(dep_hour_planned %in% c("18", "19", "20", "21", "22", "23"), "night", "midnight"))))
+```
+
+```{r}
+log_model <- glm(dep_del15 ~ distance, family = "binomial", flight_2023_filtered)
+summary(log_model)
+```
+
+```{r}
+fit.glm <- glm(dep_del15 ~ origin + op_unique_carrier + distance + dep_period, family = "binomial", flight_2023_filtered)
+summary(fit.glm)
+```
+
+```{r}
+attach(flight_2023_filtered)
+train <- flight_2023_filtered
+set.seed(42)  # for reproducibility
+n_2024 <- nrow(flight_2024_filtered)
+test_indices <- sample(1:n_2024, size = 0.3 * n_2024)
+
+test <- flight_2024_filtered[test_indices, ] 
+dim(test)
+test.delay <- test$dep_del15
+glm.probs <- predict(fit.glm, newdata = test, type = "response")
+glm.pred <- ifelse(glm.probs > 0.5, 1, 0)
+mean(glm.pred == test$dep_del15)
+```
+
+```{r}
+train$dep_del15 <- factor(train$dep_del15, levels = c(0, 1))
+test$dep_del15 <- factor(test$dep_del15, levels = c(0, 1))
+
+rf.fit <- randomForest(dep_del15 ~ origin + op_unique_carrier + distance + delay_reason,
+                         data = train, 
+                         importance = TRUE, 
+                         ntree = 500)
+rf_preds <- predict(rf.fit, newdata = test, type = "response")
+summary(rf_preds)
+# Confusion matrix to evaluate performance
+confusion_matrix <- table(predicted = rf_preds, actual = test$dep_del15)
+print(confusion_matrix)
+mean(rf_preds == test$dep_del15)
+
+
+
+```
+
+```{r}
+train$delay_reason <- factor(train$delay_reason)
+test$delay_reason <- factor(test$delay_reason, levels = levels(train$delay_reason))
+
+rf.fit_reason <- randomForest(delay_reason ~ origin + op_unique_carrier + distance + dep_period,
+                         data = train, 
+                         importance = TRUE, 
+                         ntree = 500)
+rf_preds_reason <- predict(rf.fit_reason, newdata = test, type = "response")
+
+# Confusion matrix to evaluate performance
+confusion_matrix <- table(predicted = rf_preds, actual = test$dep_del15)
+print(confusion_matrix)
+mean(rf_preds_reason == test$delay_reason)
+
+```
