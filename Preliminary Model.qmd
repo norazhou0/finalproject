@@ -151,11 +151,7 @@ flight_2024_filtered <- flight_2024_filtered |>
 ```
 
 ```{r}
-log_model <- glm(dep_del15 ~ distance, family = "binomial", flight_2023_filtered)
-summary(log_model)
-```
-
-```{r}
+#Logistic
 fit.glm <- glm(dep_del15 ~ origin + op_unique_carrier + distance + dep_period, family = "binomial", flight_2023_filtered)
 summary(fit.glm)
 ```
@@ -173,9 +169,11 @@ test.delay <- test$dep_del15
 glm.probs <- predict(fit.glm, newdata = test, type = "response")
 glm.pred <- ifelse(glm.probs > 0.5, 1, 0)
 mean(glm.pred == test$dep_del15)
+# Does not work well
 ```
 
 ```{r}
+#Random Forest
 train$dep_del15 <- factor(train$dep_del15, levels = c(0, 1))
 test$dep_del15 <- factor(test$dep_del15, levels = c(0, 1))
 
@@ -195,6 +193,7 @@ mean(rf_preds == test$dep_del15)
 ```
 
 ```{r}
+#Random Forest for delay reason
 train$delay_reason <- factor(train$delay_reason)
 test$delay_reason <- factor(test$delay_reason, levels = levels(train$delay_reason))
 
