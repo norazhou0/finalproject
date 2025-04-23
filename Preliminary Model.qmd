@@ -5,7 +5,6 @@ editor: visual
 ---
 
 # Part 1: Loading and Cleaning Data
-
 ```{r, include=FALSE}
 library(dplyr)
 library(tidyverse)
@@ -49,7 +48,6 @@ flight_2023$fl_date <- format(flight_2023$fl_date, "%m/%d/%Y")
 logistic (if delay over 15 minutes), KNN (delay reasons), Tree (delay reason)
 
 # Part 2: Exploratory Data Analysis
-
 ```{r}
 #EDA
 summary(flight_2023)
@@ -105,65 +103,8 @@ delay_type
 # Part 3: Model fitting
 
 ```{r}
-#Filter airport and carrier
-top10_airport_23 <- flight_2023 |>
-  group_by(origin) |>
-  summarize(count = n()) |>
-  arrange(desc(count)) |>
-    slice_head(n = 10)
-flight_2023_filtered <- flight_2023 |>
-  filter(origin == top10_airport_23$origin)
-
-top5_carrier_23 <- flight_2023 |>
-  group_by(op_unique_carrier) |>
-  summarize(count = n()) |>
-  arrange(desc(count)) |>
-    slice_head(n = 5)
-flight_2023_filtered <- flight_2023_filtered |>
-  filter(op_unique_carrier == top5_carrier_23$op_unique_carrier)
-
-top10_airport_24 <- flight_2024 |>
-  group_by(origin) |>
-  summarize(count = n()) |>
-  arrange(desc(count)) |>
-    slice_head(n = 10)
-flight_2024_filtered <- flight_2024 |>
-  filter(origin == top10_airport_24$origin)
-
-top5_carrier_24 <- flight_2023 |>
-  group_by(op_unique_carrier) |>
-  summarize(count = n()) |>
-  arrange(desc(count)) |>
-    slice_head(n = 5)
-flight_2024_filtered <- flight_2024_filtered |>
-  filter(op_unique_carrier == top5_carrier_24$op_unique_carrier)
-
-
-```
-
-```{r}
 log_model <- glm(dep_del15 ~ distance, family = "binomial", flight_2023)
 summary(log_model)
 ```
 
-```{r}
-fit.glm <- glm(dep_del15 ~ origin + op_unique_carrier + distance + actual_elapsed_time, family = "binomial", flight_2023_filtered)
-summary(logistic.fit)
-```
 
-```{r}
-attach(flight_2023_filtered)
-train <- flight_2023_filtered
-set.seed(42)  # for reproducibility
-n_2024 <- nrow(flight_2024_filtered)
-test_indices <- sample(1:n_2024, size = 0.3 * n_2024)
-
-test <- flight_2024[test_indices, ] 
-test <- test |> filter(dep_del15 != "NA")
-dim(test)
-test.delay <- test$dep_del15
-glm.probs <- predict(fit.glm, newdata = test, type = "response")
-glm.pred <- ifelse(glm.probs > 0.5, 1, 0)
-mean(glm.pred == test$dep_del15)
-sum(is.na(test$dep_del15))
-```
