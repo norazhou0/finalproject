@@ -5,6 +5,7 @@ editor: visual
 ---
 
 # Part 1: Loading and Cleaning Data
+
 ```{r, include=FALSE}
 library(dplyr)
 library(tidyverse)
@@ -48,6 +49,7 @@ flight_2023$fl_date <- format(flight_2023$fl_date, "%m/%d/%Y")
 logistic (if delay over 15 minutes), KNN (delay reasons), Tree (delay reason)
 
 # Part 2: Exploratory Data Analysis
+
 ```{r}
 #EDA
 summary(flight_2023)
@@ -79,9 +81,7 @@ airport_delay
 ```
 
 ```{r}
-flight_cleaned <- flight_2023 |>
-  filter(!is.na(carrier_delay) | !is.na(weather_delay) | !is.na(nas_delay) | 
-         !is.na(security_delay) | !is.na(late_aircraft_delay)) |>
+fligh_2023 <- flight_2023 |>
 mutate(delay_reason = case_when(
     !is.na(carrier_delay) & carrier_delay > 0 ~ "Carrier",
     !is.na(weather_delay) & weather_delay > 0 ~ "Weather",
@@ -108,3 +108,35 @@ summary(log_model)
 ```
 
 
+```{r}
+top5_carrier <- flight_2023 |> 
+  group_by(op_unique_carrier) |>
+  summarise(total = n()) |>
+  arrange(desc(total)) |>
+  head(n = 5)
+
+top10_origin <- flight_2023 |> 
+  group_by(origin) |>
+  summarise(total = n()) |>
+  arrange(desc(total)) |>
+  head(n = 10)
+```
+
+```{r}
+flight_2023_filtered <- flight_2023 |>
+  filter(op_unique_carrier %in% top5_carrier$op_unique_carrier,
+         origin %in% top10_origin$origin)
+flight_2024_filtered <- flight_2024 |>
+  filter(op_unique_carrier %in% top5_carrier$op_unique_carrier,
+         origin %in% top10_origin$origin)
+```
+
+```{r}
+set.seed(42) 
+n_2024 <- nrow(flight_2024_filtered)
+test_indices <- sample(1:n_2024, size = 0.3 * n_2024)
+test <- flight_2024[test_indices, ]
+```
+
+
+carrier delay vs not origin delay overall delay
