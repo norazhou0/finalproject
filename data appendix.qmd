@@ -1,0 +1,187 @@
+---
+title: "Final Project Data Appendix"
+author: "[Team Team Team]"
+format: 
+  pdf:
+    geometry: 
+      - left=1in
+      - right=1in
+      - top=1in
+      - bottom=1in
+---
+
+# Part 1: Loading and Cleaning Data
+```{r, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(janitor)
+library(lubridate)
+```
+
+
+```{r}
+flight <- read_csv("T_ONTIME_REPORTING 4.csv")
+flight <- clean_names(flight)
+```
+
+```{r}
+# Define a function to format the time columns
+convert_time_column <- function(flight_data, column_name) {
+  formatted_times <- sprintf("%04s", flight_data[[column_name]])
+  formatted_times <- paste0(substr(formatted_times, 1, 2), ":", substr(formatted_times, 3, 4))
+  flight_data[[column_name]] <- as.POSIXct(formatted_times, format = "%H:%M")
+  flight_data[[column_name]] <- format(flight_data[[column_name]], "%H:%M")
+  return(flight_data)
+}
+
+# List the columns to convert
+time_columns <- c("dep_time", "arr_time", "crs_dep_time", "crs_arr_time") # Add more columns if necessary
+
+# Loop through the columns and apply the conversion
+for (column in time_columns) {
+  flight <- convert_time_column(flight, column)
+}
+# Convert date
+flight$fl_date <- as.POSIXct(flight$fl_date, format = "%m/%d/%Y %I:%M:%S %p")
+flight$fl_date <- format(flight$fl_date, "%m/%d/%Y")
+```
+# Part 2: Data Description
+*Dataset*: 
+  Flight delay Data: January 2024 (Selected relevant variables from Bureau of Transportation Statistics and downloaded as a data frame)
+
+_year_:
+	Year
+	
+_fl_date_:
+	Flight Date (yyyymmdd)
+	Reformatted as mm/dd/yyyy
+	
+_op_unique_carrier_:
+	Unique Carrier Code. When the same code has been used by multiple carriers, a numeric suffix is used for earlier users, for example, PA, PA(1), PA(2). Use this field for analysis across a range of years.
+	
+_op_carrier_fl_num_:Flight Number
+
+_origin_airport_id_:
+	Origin Airport, Airport ID. An identification number assigned by US DOT to identify a unique airport.
+	
+_origin_: Origin Airport
+
+_origin_city_name_: Origin Airport, City Name
+
+_origin_state_nm_: Origin Airport, State Name
+dest_airport_id: Destination Airport, Airport ID. An identification number assigned by US DOT to identify a unique airport.
+
+_dest_: Destination Airport
+
+_dest_city_name_: Destination Airport, City Name
+
+_dest_state_nm_: Destination Airport, State Name
+
+_crs_dep_time_: CRS Departure Time (local time: hhmm)	
+
+_dep_time_: Actual Departure Time (local time: hhmm)
+
+_dep_delay_: Difference in minutes between scheduled and actual departure time. Early departures show negative numbers.
+
+_dep_del15_: Departure Delay Indicator, 15 Minutes or More (1=Yes)
+
+_dep_delay_groups_: Departure Delay intervals, every (15 minutes from <-15 to >180)
+
+_crs_arr_time_: CRS Arrival Time (local time: hhmm)	
+
+_arr_time_: Actual Arrival Time (local time: hhmm)
+
+_arr_delay_: Difference in minutes between scheduled and actual Arrival time. Early departures show negative numbers.
+
+_arr_del15_: Arrival Delay Indicator, 15 Minutes or More (1=Yes)
+
+_arr_delay_groups_: Arrival Delay intervals, every (15 minutes from <-15 to >180)
+
+_cancelled_: Cancelled Flight Indicator (1=Yes)	
+
+_cancellation_code_: Specifies The Reason For Cancellation
+
+_diverted_: Diverted Flight Indicator (1=Yes)
+
+_actual_elapsed_time_: Elapsed Time of Flight, in Minutes
+
+_flights_: Number of Flights	
+
+_distance_: Distance between airports (miles)	
+
+_distance_group_: Distance Intervals, every 250 Miles, for Flight Segment
+
+_carrier_delay_:
+Carrier delay is within the control of the air carrier. Examples of occurrences that may determine carrier delay are: aircraft cleaning, aircraft damage, awaiting the arrival of connecting passengers or crew, baggage, bird strike, cargo loading, catering, computer, outage-carrier equipment, crew legality (pilot or attendant rest), damage by hazardous goods, engineering inspection, fueling, handling disabled passengers, late crew, lavatory servicing, maintenance, oversales, potable water servicing, removal of unruly passenger, slow boarding or seating, stowing carry-on baggage, weight and balance delays.
+
+_latearrival_delay_:
+Arrival delay at an airport due to the late arrival of the same aircraft at a previous airport. The ripple effect of an earlier delay at downstream airports is referred to as delay propagation.
+
+_nas_delay_:
+Delay that is within the control of the National Airspace System (NAS) may include: non-extreme weather conditions, airport operations, heavy traffic volume, air traffic control, etc. Delays that occur after Actual Gate Out are usually attributed to the NAS and are also reported through OPSNET.
+
+_security_delay_:
+Security delay is caused by evacuation of a terminal or concourse, re-boarding of aircraft because of security breach, inoperative screening equipment and/or long lines in excess of 29 minutes at screening areas.
+
+_weather_delay_:
+Weather delay is caused by extreme or hazardous weather conditions that are forecasted or manifest themselves on point of departure, enroute, or on point of arrival.
+
+# Part 3: Exploratory Data Analysis
+```{r}
+#EDA
+summary(flight)
+flight <- flight |> 
+  filter(!is.na(dep_delay) & !is.na(arr_delay))
+
+flight |> 
+  group_by(origin) |>
+  #filter(dep_delay_group == 1) |>
+  summarize(total = n(),
+            average_delay = mean(dep_delay)) |>
+  arrange(desc(total))
+
+airport_high <- flight |>
+  filter(origin %in% c("DEN", "ATL", "DFW", "ORD", "CLT"))
+
+
+```
+
+```{r}
+airport_delay <- ggplot(airport_high, aes(x = origin, fill = as.factor(dep_del15) )) +
+  geom_bar(position = "fill") +
+  labs(title = "Proportion of flight delay ≥15 minutes
+       Busiest Airports in US, 2024 January",
+       y = "Proportion of Flight Counts",
+       x = "Origin Airport Code",
+        fill = "Delay ≥ 15 minutes")
+airport_delay
+```
+
+```{r}
+
+flight_cleaned <- flight |>
+  filter(!is.na(carrier_delay) | !is.na(weather_delay) | !is.na(nas_delay) | 
+         !is.na(security_delay) | !is.na(late_aircraft_delay)) |>
+mutate(delay_reason = case_when(
+    !is.na(carrier_delay) & carrier_delay > 0 ~ "Carrier",
+    !is.na(weather_delay) & weather_delay > 0 ~ "Weather",
+    !is.na(nas_delay) & nas_delay > 0 ~ "NAS",
+    !is.na(security_delay) & security_delay > 0 ~ "Security",
+    !is.na(late_aircraft_delay) & late_aircraft_delay > 0 ~ "Late Aircraft",
+    TRUE ~ "Unknown"
+  )) 
+
+delay_type <- ggplot(flight_cleaned, aes(x = fct_infreq(delay_reason)))+
+  geom_bar(fill = "#66c2a5") +
+  theme_minimal() +
+  labs(title = "Delay reasons by types, January 2024",
+       x = "Delay reasons",
+       y = "Number of Flights") 
+delay_type
+```
+
+# Part 4: Pressing Issues
+1. We have a significant number of flight data even for one month so we need to make sure our goals are clear and practical. 
+2. We need to research more and have a better understanding of important features of flights to do further analysis and training.
+3. Also, because there are a lot of observations for a month, we need to becareful of biases related to that specific month or how to bring in other month's data
