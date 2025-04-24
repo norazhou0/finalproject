@@ -1,0 +1,121 @@
+---
+title: "Weather"
+format: html
+editor: visual
+---
+```{r}
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(janitor)
+library(lubridate)
+```
+
+```{r}
+weather2023 <- read_csv("weather2023.csv")
+
+weather2023 <- weather2023 |>
+  clean_names() |>
+  mutate(origin = case_when(station == "USW00094846" ~ "ORD",
+                           station == "USW00003017" ~ "DEN" ,
+                           station == "USW00003985" ~ "DFW",
+                           station == "USW00023169" ~ "LAS",
+                           station == "USW00014732" ~ "LGA",
+                           station == "USW00013874" ~ "ATL"))
+#Format weather date
+weather2023$date <- format(weather2023$date, "%m/%d/%Y")
+#Filter flight dataset to ATL
+flight_23 <- flight_2023_filtered |>
+  filter(origin == c("ATL", "ORD", "LAS", "DEN", "LGA", "DFW"))
+#Join flight and weather dataset
+flight_23_full <- flight_23 |>
+  left_join(weather2023, by = c("fl_date" = "date", "origin" = "origin")) |>
+  mutate(weather = case_when(weather_delay == 0 ~ "0",
+                              weather_delay > 0 ~ "1"),
+         prcp = if_else(is.na(prcp), 0, prcp),
+         awnd = if_else(is.na(awnd), 0, awnd))|>
+  filter(weather != "NA")
+ 
+flight_23_full |>
+  group_by(origin) |>
+  summarise("Mean Precipitation" = mean(prcp),
+            "Average wind speed" = mean(awnd))
+sum(is.na(weather2023$prcp))
+```
+
+```{r}
+weather2024 <- read_csv("weather2024.csv")
+
+weather2024 <- weather2024 |>
+  clean_names() |>
+  mutate(origin = case_when(station == "USW00094846" ~ "ORD",
+                           station == "USW00003017" ~ "DEN" ,
+                           station == "USW00003985" ~ "DFW",
+                           station == "USW00023169" ~ "LAS",
+                           station == "USW00014732" ~ "LGA",
+                           station == "USW00013874" ~ "ATL"))
+#Format weather date
+weather2024$date <- format(weather2024$date, "%m/%d/%Y")
+#Filter flight dataset to ATL
+flight_24 <- flight_2024_filtered |>
+  filter(origin == c("ATL", "ORD", "LAS", "DEN", "LGA", "DFW"))
+#Join flight and weather dataset
+flight_24_full <- flight_24 |>
+  left_join(weather2024, by = c("fl_date" = "date", "origin" = "origin")) |>
+  mutate(weather = case_when(weather_delay == 0 ~ "0",
+                              weather_delay > 0 ~ "1"),
+         prcp = if_else(is.na(prcp), 0, prcp),
+         awnd = if_else(is.na(awnd), 0, awnd))|>
+  filter(weather != "NA")
+ 
+flight_24_full |>
+  group_by(origin) |>
+  summarise("Mean Precipitation" = mean(prcp),
+            "Average wind speed" = mean(awnd))
+sum(is.na(weather2024$tavg
+          ))
+
+```
+
+```{r}
+# Weather delay as response variable
+train_weather <- flight_23_full
+set.seed(42)  # for reproducibility
+n_2024_weather <- nrow(flight_24_full)
+test_indices <- sample(1:n_2024__weather, size = 0.3 * n_2024_weather)
+
+test_weather <- flight_24_full[test_indices, ] 
+train_weather$weather <- factor(train_weather$weather)
+test_weather$weather <- factor(test_weather$weather, levels = levels(train_weather$weather))
+
+rf.fit_weather <- randomForest(weather ~ op_unique_carrier + distance + dep_period + prcp + awnd + tmax + tmin,
+                         data = train_weather, 
+                         importance = TRUE, 
+                         ntree = 500)
+rf_preds_weather <- predict(rf.fit_weather, newdata = test_weather, type = "response")
+
+# Confusion matrix to evaluate performance
+confusion_matrix <- table(predicted = rf_preds_weather, actual = test_weather$weather)
+print(confusion_matrix)
+mean(rf_preds_weather == test_atl$weather)
+varImpPlot(rf.fit_weather)
+
+
+#Delay for 15 minutes or more as response variable
+train_weather$dep_del15 <- factor(train_weather$dep_del15, levels = c(0, 1))
+test_weather$dep_del15 <- factor(test_weather$dep_del15, levels = c(0, 1))
+
+rf.fit.w <- randomForest(dep_del15 ~ op_unique_carrier + distance + dep_period + prcp + awnd + tmax + tmin,
+                         data = train_weather, 
+                         importance = TRUE, 
+                         ntree = 500)
+rf_preds_w <- predict(rf.fit.w, newdata = test_weather, type = "response")
+
+
+# Confusion matrix to evaluate performance
+confusion_matrix <- table(predicted = rf_preds_w, actual = test_weather$dep_del15)
+print(confusion_matrix)
+mean(rf_preds_w == test_weather$dep_del15)
+varImpPlot(rf.fit.w)
+```
+
